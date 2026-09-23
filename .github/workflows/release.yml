@@ -1,0 +1,62 @@
+# Zakadi repository standard: release.yml for SwiftPM (ZakadiSDK). The tag is the
+# release: the workflow re-runs the tests, archives the dynamic framework for the device
+# and the simulator with library evolution, copies each archive's Swift module into its
+# framework (xcodebuild archive leaves it in BuildProductsPath), assembles
+# ZakadiSDK.xcframework (ios-arm64, ios-arm64_x86_64-simulator) and attaches it, zipped,
+# to the tag's GitHub release with the changelog section and the SwiftPM checksum.
+# Unsigned and without PrivacyInfo.xcprivacy until a signing identity exists (spec 07
+# 7.28).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/fetch-vectors.sh
+      - run: swift build
+      - run: swift test
+
+  xcframework:
+    needs: test
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Archive the framework for the device and the simulator
+        run: |
+          for sdk in iphoneos iphonesimulator; do
+            if [ "$sdk" = iphoneos ]; then platform="iOS"; else platform="iOS Simulator"; fi
+            xcodebuild archive -scheme ZakadiSDK -destination "generic/platform=$platform" \
+              -archivePath "build/$sdk.xcarchive" -derivedDataPath build/DerivedData \
+              SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES CODE_SIGNING_ALLOWED=NO
+            framework="build/$sdk.xcarchive/Products/usr/local/lib/ZakadiSDK.framework"
+            mkdir -p "$framework/Modules"
+            cp -R "build/DerivedData/Build/Intermediates.noindex/ArchiveIntermediates/ZakadiSDK/BuildProductsPath/Release-$sdk/ZakadiSDK.swiftmodule" "$framework/Modules/"
+          done
+      - name: Assemble and zip ZakadiSDK.xcframework
+        run: |
+          xcodebuild -create-xcframework \
+            -framework build/iphoneos.xcarchive/Products/usr/local/lib/ZakadiSDK.framework \
+            -framework build/iphonesimulator.xcarchive/Products/usr/local/lib/ZakadiSDK.framework \
+            -output build/ZakadiSDK.xcframework
+          ditto -c -k --norsrc --noextattr --keepParent build/ZakadiSDK.xcframework build/ZakadiSDK.xcframework.zip
+      - name: Release notes from the changelog section of this version, with the checksum
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '$0 ~ "^## \\[" v "\\]" {p=1; next} /^## \[/ {p=0} p' CHANGELOG.md > notes.md
+          test -s notes.md
+          printf '\nSwiftPM checksum of ZakadiSDK.xcframework.zip: `%s`\n' "$(swift package compute-checksum build/ZakadiSDK.xcframework.zip)" >> notes.md
+      - uses: softprops/action-gh-release@v3
+        with:
+          body_path: notes.md
+          files: build/ZakadiSDK.xcframework.zip
+          fail_on_unmatched_files: true
