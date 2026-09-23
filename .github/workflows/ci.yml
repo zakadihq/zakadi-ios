@@ -1,0 +1,58 @@
+# Zakadi repository standard: ci.yml for a Swift package (iOS).
+# The commands are the ones in lefthook.yml. "swift format" ships with the Swift 6
+# toolchain on the macOS runner; SwiftLint comes from Homebrew. The lint job also builds
+# for the iOS simulator, which the host build does not compile for. The unit job fetches
+# the zakadi-protocol vectors the tests run. The integration job runs the simulator test
+# target and skips itself until that target exists.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift format lint --strict --recursive Package.swift Sources Tests
+
+  lint:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: brew install swiftlint
+      - run: swiftlint lint --strict
+      - run: xcodebuild build -scheme ZakadiSDK -destination 'generic/platform=iOS Simulator'
+
+  unit:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/fetch-vectors.sh
+      - run: swift build
+      - run: swift test
+
+  integration:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: detect
+        run: |
+          if [ -d Tests/ZakadiSDKIntegrationTests ]; then
+            echo present=true >> "$GITHUB_OUTPUT"
+          else
+            echo present=false >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        run: |
+          device=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+' | sed 's/ *$//')
+          xcodebuild test -scheme ZakadiSDK -destination "platform=iOS Simulator,name=$device" -only-testing:ZakadiSDKIntegrationTests
