@@ -3,7 +3,11 @@
 # toolchain on the macOS runner; SwiftLint comes from Homebrew. The lint job also builds
 # for the iOS simulator, which the host build does not compile for. The unit job fetches
 # the zakadi-protocol vectors the tests run. The integration job runs the simulator test
-# target and skips itself until that target exists.
+# target and skips itself until that target exists. The lint job ends with the scan (CI
+# only, references/GITHUB.md). SwiftPM has no audit command and osv-scanner does not
+# read Package.resolved, so the scan reads the pins itself: the licence GitHub detects
+# for each pinned repository against the excluded list of spec 00 0.10, then one OSV
+# query batch (the database osv-scanner uses) for the pinned versions.
 name: ci
 
 on:
@@ -32,6 +36,35 @@ jobs:
       - run: brew install swiftlint
       - run: swiftlint lint --strict
       - run: xcodebuild build -scheme ZakadiSDK -destination 'generic/platform=iOS Simulator'
+      - name: scan
+        shell: bash
+        env:
+          EXCLUDED_LICENCES: '(^|[^[:alnum:]])(A?GPL|SSPL|RSAL)|GNU (Affero )?General Public|Server Side Public|Redis Source Available|-NC([^[:alnum:]]|$)|[Nn]on[- ]?[Cc]ommercial|FoxIO'
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          swift package resolve
+          if [ ! -f Package.resolved ]; then
+            echo "scan: no pinned dependencies"
+            exit 0
+          fi
+          jq -r '.pins[].location' Package.resolved | while read -r url; do
+            repo=${url#https://github.com/}
+            repo=${repo%.git}
+            licence=$(gh api "repos/$repo/license" --jq .license.spdx_id 2>/dev/null) || licence=unknown
+            echo "$repo $licence"
+          done | tee "$RUNNER_TEMP/licences.txt"
+          if grep -E "$EXCLUDED_LICENCES" "$RUNNER_TEMP/licences.txt"; then
+            echo "scan: a licence excluded by spec 00 0.10 is listed above" >&2
+            exit 1
+          fi
+          jq '{queries: [.pins[] | select(.state.version) | {package: {ecosystem: "SwiftURL", name: (.location | sub("^https://"; "") | sub("\\.git$"; ""))}, version: .state.version}]}' Package.resolved > "$RUNNER_TEMP/osv-query.json"
+          curl -fsS --data @"$RUNNER_TEMP/osv-query.json" https://api.osv.dev/v1/querybatch \
+            | jq -r --slurpfile q "$RUNNER_TEMP/osv-query.json" '[$q[0].queries, (.results // [])] | transpose[] | select(.[1].vulns) | "\(.[0].package.name) \(.[0].version) \([.[1].vulns[].id] | join(" "))"' \
+            | tee "$RUNNER_TEMP/vulnerabilities.txt"
+          if [ -s "$RUNNER_TEMP/vulnerabilities.txt" ]; then
+            echo "scan: the pinned versions above have known vulnerabilities (OSV)" >&2
+            exit 1
+          fi
 
   unit:
     runs-on: macos-latest
