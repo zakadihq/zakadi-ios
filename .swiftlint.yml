@@ -1,0 +1,11 @@
+# SwiftLint for the ZakadiSDK package: `swiftlint lint --strict` in the lint job of
+# .github/workflows/ci.yml and in the pre-commit hook. swift format (.swift-format) owns
+# the layout, so the one default rule that contradicts it is off: swift format puts a
+# trailing comma after the last element of a multi-line collection with several elements
+# and takes it away after a single element, which trailing_comma cannot express.
+included:
+  - Package.swift
+  - Sources
+  - Tests
+disabled_rules:
+  - trailing_comma
