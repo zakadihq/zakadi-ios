@@ -4,3 +4,7 @@ xcuserdata/
 *.xcuserstate
 Pods/
 .DS_Store
+/Packages
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
