@@ -88,4 +88,4 @@ jobs:
       - if: steps.detect.outputs.present == 'true'
         run: |
           device=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+' | sed 's/ *$//')
-          xcodebuild test -scheme ZakadiSDK -destination "platform=iOS Simulator,name=$device" -only-testing:ZakadiSDKIntegrationTests
+          xcodebuild test -scheme ZakadiSDK-Package -destination "platform=iOS Simulator,name=$device" -only-testing:ZakadiSDKIntegrationTests

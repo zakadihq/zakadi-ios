@@ -12,7 +12,11 @@ let package = Package(
             name: "ZakadiSDK",
             type: .dynamic,
             targets: ["ZakadiSDK"]
-        )
+        ),
+        .library(
+            name: "ZakadiSDKTesting",
+            targets: ["ZakadiSDKTesting"]
+        ),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -25,10 +29,27 @@ let package = Package(
         ),
         .testTarget(
             name: "ZakadiSDKTests",
-            dependencies: ["ZakadiSDK"],
+            dependencies: ["ZakadiSDK", .target(name: "ZakadiSDKTesting")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency")
             ],
+        ),
+        .target(
+            name: "ZakadiSDKTesting",
+            dependencies: ["ZakadiSDK"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency")
+            ]
+        ),
+        .testTarget(
+            name: "ZakadiSDKIntegrationTests",
+            dependencies: [
+                "ZakadiSDK",
+                "ZakadiSDKTesting",
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency")
+            ]
         ),
     ]
 )
