@@ -1,8 +1,8 @@
 import Foundation
 
 /// A JSON value whose objects keep their keys in the order given: the encoder log lists
-/// every line's keys in a fixed order, which `JSONSerialization` and `JSONEncoder` do not
-/// promise before iOS 17.
+/// every line's keys in a fixed order, which neither `JSONSerialization` nor `JSONEncoder`
+/// promises.
 @_spi(Testing) public enum JSONValue: Sendable, Equatable {
     case null
     case bool(Bool)
