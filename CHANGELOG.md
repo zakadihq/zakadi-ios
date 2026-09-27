@@ -13,5 +13,12 @@ All notable changes to this package are documented here. The format follows
   `ios-arm64_x86_64-simulator`) attached to each tag's GitHub release.
 - The `zakadi.v1` media framing codec (header, probe and audio batch payloads) and the
   `attest` hash chain, checked against the `zakadi-protocol` v0.1.0 conformance vectors.
+- The front-camera capture pipeline and the VideoToolbox H.264 encoder, behind
+  `@_spi(Testing)`: 420v capture with the pacer and decimation, rung 3 and 4 scaling,
+  Constrained Baseline with the Baseline fallback, Annex-B output, keyframe, bitrate and
+  size changes, and the front camera and encoder checks of the capability probe.
+- The `ZakadiSDKTesting` library for tests and the phase 0 encoder probe: log format 1,
+  schedule 1 and its summaries, a probe runner over any frame source and a synthetic
+  source. It is never part of a release app.
 
 [Unreleased]: https://github.com/zakadihq/zakadi-ios/commits/main
