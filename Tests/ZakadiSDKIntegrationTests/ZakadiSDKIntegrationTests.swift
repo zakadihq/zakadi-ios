@@ -179,7 +179,9 @@ final class ZakadiSDKIntegrationTests: XCTestCase {
         }
     }
 
-    /// The `run_end` summaries equal what the run's lines give (Z-059's computation).
+    /// The `run_end` summaries equal what the run's lines give (Z-059's computation), to the
+    /// three decimals the log keeps: a median of two latencies in whole microseconds can
+    /// end in half a microsecond.
     private func checkSummaries(_ lines: [[String: Any]], run: Int) throws {
         let records: [ProbeRecord] = lines.compactMap { line in
             let time = Int64(line["t_us"] as? Int ?? 0)
@@ -210,7 +212,7 @@ final class ZakadiSDKIntegrationTests: XCTestCase {
             let logged = end[key] as? Double
             XCTAssertEqual(logged == nil, value == nil, "run \(run) \(key)")
             if let logged, let value {
-                XCTAssertEqual(logged, value, accuracy: 0.0005, "run \(run) \(key)")
+                XCTAssertEqual(logged, value, accuracy: 0.001, "run \(run) \(key)")
             }
         }
     }
