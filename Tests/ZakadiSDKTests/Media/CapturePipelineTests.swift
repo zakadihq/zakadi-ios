@@ -30,6 +30,14 @@ final class CapturePipelineTests: XCTestCase {
         }
     }
 
+    /// The frame numbers, at 30 fps, of the frames that went to the encoder.
+    private var submitted: [Int] {
+        events.compactMap {
+            if case .submitted(let time) = $0 { return Int((time.seconds * 30).rounded()) }
+            return nil
+        }
+    }
+
     private var drops: [DropReason] {
         events.compactMap {
             if case .dropped(_, let reason) = $0 { return reason }
@@ -48,7 +56,7 @@ final class CapturePipelineTests: XCTestCase {
         }
         XCTAssertEqual(drops.filter { $0 == .pacing }.count, 12, "15 of 30 fps")
         XCTAssertEqual(drops.filter { $0 == .decimation }.count, 2, "every 4th of 8 kept")
-        XCTAssertEqual(outputs.count, 10)
+        XCTAssertEqual(submitted, [0, 2, 4, 6, 8, 10, 12, 16, 18, 20])
     }
 
     func testMaxFpsCapsTheRungRate() throws {
@@ -61,7 +69,7 @@ final class CapturePipelineTests: XCTestCase {
             for index in 0..<30 { try source.push(index) }
             pipeline.stopEncoder()
         }
-        XCTAssertEqual(outputs.count, 10, "rung 0's 20 fps capped at 10")
+        XCTAssertEqual(submitted, Array(stride(from: 0, to: 30, by: 3)), "20 fps capped at 10")
     }
 
     func testAKeyframeRequestForcesTheNextSubmittedFrame() throws {
@@ -74,7 +82,8 @@ final class CapturePipelineTests: XCTestCase {
             try source.push(11)
             pipeline.stopEncoder()
         }
-        XCTAssertEqual(outputs.map(\.isIDR), [true, false, false, false, false, true])
+        let idr = outputs.filter(\.isIDR).map { Int(($0.presentationTime.seconds * 30).rounded()) }
+        XCTAssertEqual(idr, [0, 10], "the first frame and the one after the request")
         XCTAssertTrue(events.contains { if case .keyframeRequested = $0 { true } else { false } })
     }
 
