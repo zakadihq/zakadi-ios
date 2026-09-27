@@ -1,0 +1,68 @@
+# The iPhone encoder probe app of phase 0 measurement 6 (spec 09 9.11 item 6, D105).
+# XcodeGen generates the project from this file and the two source directories:
+#   xcodegen generate --spec Probe/project.yml --project Probe
+# The generated Probe/ZakadiProbe.xcodeproj is ignored by git; regenerate it after
+# adding a file. The app links the local package's ZakadiSDKTesting product, through which
+# ZakadiSDK reaches it statically: Xcode refuses a target linked both dynamically (the
+# ZakadiSDK product) and statically (as ZakadiSDKTesting's dependency).
+name: ZakadiProbe
+options:
+  bundleIdPrefix: dev.zakadi
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  ZakadiSDK:
+    path: ..
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  ZakadiProbe:
+    type: application
+    platform: iOS
+    sources:
+      - path: ZakadiProbe
+    dependencies:
+      - package: ZakadiSDK
+        product: ZakadiSDKTesting
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.zakadi.ZakadiProbe
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_NSCameraUsageDescription: "Measures the camera and the video encoder for Zakadi phase 0. Nothing is recorded or sent."
+        INFOPLIST_KEY_UIFileSharingEnabled: YES
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+  ZakadiProbeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ZakadiProbeTests
+    dependencies:
+      - target: ZakadiProbe
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.zakadi.ZakadiProbeTests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ZakadiProbe:
+    build:
+      targets:
+        ZakadiProbe: all
+        ZakadiProbeTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ZakadiProbeTests

@@ -9,3 +9,4 @@ Pods/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 /vectors/
+Probe/*.xcodeproj/
