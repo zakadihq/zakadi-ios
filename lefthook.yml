@@ -1,7 +1,7 @@
 # Zakadi repository standard: git hooks (lefthook 2.x), Swift with SwiftPM (iOS).
 # These are the commands .github/workflows/ci.yml runs; a change here is a change there.
-# Install: brew install lefthook swiftlint, then lefthook install. "swift format" is
-# the formatter bundled with the Swift 6 toolchain.
+# Install: brew install lefthook swiftlint xcodegen, then lefthook install. "swift format"
+# is the formatter bundled with the Swift 6 toolchain.
 
 pre-commit:
   jobs:
@@ -42,8 +42,11 @@ commit-msg:
 
 pre-push:
   jobs:
-    # The iOS simulator build of the lint job: the host build does not compile for iOS.
+    # The iOS simulator builds of the lint job: the host build does not compile for iOS.
     - name: types
       run: xcodebuild build -scheme ZakadiSDK -destination 'generic/platform=iOS Simulator'
+    # The probe app, from the project XcodeGen writes (ignored by git).
+    - name: probe
+      run: xcodegen generate --spec Probe/project.yml --project Probe && xcodebuild build -project Probe/ZakadiProbe.xcodeproj -scheme ZakadiProbe -destination 'generic/platform=iOS Simulator'
     - name: unit
       run: scripts/fetch-vectors.sh && swift build && swift test

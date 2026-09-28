@@ -1,13 +1,15 @@
 # Zakadi repository standard: ci.yml for a Swift package (iOS).
 # The commands are the ones in lefthook.yml. "swift format" ships with the Swift 6
-# toolchain on the macOS runner; SwiftLint comes from Homebrew. The lint job also builds
-# for the iOS simulator, which the host build does not compile for. The unit job fetches
-# the zakadi-protocol vectors the tests run. The integration job runs the simulator test
-# target and skips itself until that target exists. The lint job ends with the scan (CI
-# only, references/GITHUB.md). SwiftPM has no audit command and osv-scanner does not
-# read Package.resolved, so the scan reads the pins itself: the licence GitHub detects
-# for each pinned repository against the excluded list of spec 00 0.10, then one OSV
-# query batch (the database osv-scanner uses) for the pinned versions.
+# toolchain on the macOS runner; SwiftLint and XcodeGen come from Homebrew. The lint job
+# also builds the package and the probe app for the iOS simulator, which the host build
+# does not compile for; XcodeGen writes the app's project from Probe/project.yml first.
+# The unit job fetches the zakadi-protocol vectors the tests run. The integration job runs
+# the package's simulator test target and the probe app's unit tests on one simulator.
+# The lint job ends with the scan (CI only, references/GITHUB.md). SwiftPM has no audit
+# command and osv-scanner does not read Package.resolved, so the scan reads the pins
+# itself: the licence GitHub detects for each pinned repository against the excluded list
+# of spec 00 0.10, then one OSV query batch (the database osv-scanner uses) for the pinned
+# versions.
 name: ci
 
 on:
@@ -27,15 +29,17 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - run: swift format lint --strict --recursive Package.swift Sources Tests
+      - run: swift format lint --strict --recursive Package.swift Sources Tests Probe
 
   lint:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - run: brew install swiftlint
+      - run: brew install swiftlint xcodegen
       - run: swiftlint lint --strict
       - run: xcodebuild build -scheme ZakadiSDK -destination 'generic/platform=iOS Simulator'
+      - run: xcodegen generate --spec Probe/project.yml --project Probe
+      - run: xcodebuild build -project Probe/ZakadiProbe.xcodeproj -scheme ZakadiProbe -destination 'generic/platform=iOS Simulator'
       - name: scan
         shell: bash
         env:
@@ -76,16 +80,12 @@ jobs:
 
   integration:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - id: detect
-        run: |
-          if [ -d Tests/ZakadiSDKIntegrationTests ]; then
-            echo present=true >> "$GITHUB_OUTPUT"
-          else
-            echo present=false >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.detect.outputs.present == 'true'
-        run: |
-          device=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+' | sed 's/ *$//')
-          xcodebuild test -scheme ZakadiSDK-Package -destination "platform=iOS Simulator,name=$device" -only-testing:ZakadiSDKIntegrationTests
+      - name: simulator
+        run: echo "SIMULATOR=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+' | sed 's/ *$//')" >> "$GITHUB_ENV"
+      - run: xcodebuild test -scheme ZakadiSDK-Package -destination "platform=iOS Simulator,name=$SIMULATOR" -only-testing:ZakadiSDKIntegrationTests
+      - run: brew install xcodegen
+      - run: xcodegen generate --spec Probe/project.yml --project Probe
+      - run: xcodebuild test -project Probe/ZakadiProbe.xcodeproj -scheme ZakadiProbe -destination "platform=iOS Simulator,name=$SIMULATOR" -only-testing:ZakadiProbeTests
