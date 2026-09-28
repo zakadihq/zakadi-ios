@@ -20,5 +20,9 @@ All notable changes to this package are documented here. The format follows
 - The `ZakadiSDKTesting` library for tests and the phase 0 encoder probe: log format 1,
   schedule 1 and its summaries, a probe runner over any frame source and a synthetic
   source. It is never part of a release app.
+- `ZakadiProbe`, the iPhone app in `Probe/` that runs the phase 0 encoder probe: schedule 1
+  on the front camera, one log in format 1 per run in `Documents/zakadi-probe/`, offered in
+  the share sheet. XcodeGen generates its project from `Probe/project.yml`; CI builds it and
+  runs its tests on the simulator. It is not part of the package or its release.
 
 [Unreleased]: https://github.com/zakadihq/zakadi-ios/commits/main
