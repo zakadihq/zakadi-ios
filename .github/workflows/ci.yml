@@ -86,6 +86,10 @@ jobs:
       - name: simulator
         run: echo "SIMULATOR=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+' | sed 's/ *$//')" >> "$GITHUB_ENV"
       - run: xcodebuild test -scheme ZakadiSDK-Package -destination "platform=iOS Simulator,name=$SIMULATOR" -only-testing:ZakadiSDKIntegrationTests
-      - run: brew install xcodegen
-      - run: xcodegen generate --spec Probe/project.yml --project Probe
-      - run: xcodebuild test -project Probe/ZakadiProbe.xcodeproj -scheme ZakadiProbe -destination "platform=iOS Simulator,name=$SIMULATOR" -only-testing:ZakadiProbeTests
+      # The probe app's tests run whatever the package's returned, so both results show.
+      - name: probe
+        if: ${{ !cancelled() }}
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec Probe/project.yml --project Probe
+          xcodebuild test -project Probe/ZakadiProbe.xcodeproj -scheme ZakadiProbe -destination "platform=iOS Simulator,name=$SIMULATOR" -only-testing:ZakadiProbeTests
