@@ -45,6 +45,8 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
   ZakadiProbeTests:
     type: bundle.unit-test
+    # XCTest in the iOS 26 SDK is built for iOS 17: the tests run there, the app stays at 15.
+    deploymentTarget: "17.0"
     platform: iOS
     sources:
       - path: ZakadiProbeTests
