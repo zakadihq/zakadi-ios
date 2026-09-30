@@ -4,7 +4,9 @@ import XCTest
 @_spi(Testing) import ZakadiSDKTesting
 
 /// Schedule 1, shortened, on the iOS simulator over the synthetic source (spec 09 9.11
-/// item 6): the log it writes parses in full. `ci.yml` runs it in the `integration` job.
+/// item 6): the log it writes parses in full, with its keyframe requests and bitrate steps
+/// where the log's own times put them. `ci.yml` runs it in the `integration` job; the check
+/// of those times also runs over lines built in memory, on the host under `swift test`.
 final class ZakadiSDKIntegrationTests: XCTestCase {
     /// The keys of every line kind of format 1, in order (Z-064's Spec).
     static let keys: [String: [String]] = [
@@ -60,6 +62,41 @@ final class ZakadiSDKIntegrationTests: XCTestCase {
                     lines.filter { $0["run"] as? Int == run }, run: run, schedule: schedule)
             }
         #endif
+    }
+
+    /// The keyframe check over run 4 built in memory. An IDR output that reaches the queue
+    /// after the run's last frame puts the key `out` line after the last `in` line, and the
+    /// `in` lines 1 s past its time oblige no request; with each output 10 ms after its
+    /// frame, the `in` line 1 s past the key `out` line needs a `kf_req` line before it,
+    /// and passes with one.
+    func testAnInputASecondPastTheKeyOutputNeedsARequestBeforeIt() {
+        XCTAssertEqual(Self.memoryFindings(run: 4, through: 44, lag: 2_310_000), [])
+        XCTAssertEqual(
+            Self.memoryFindings(run: 4, through: 20),
+            ["no kf_req before the in line at t_us 1005000, 1000000 us past the first key out"])
+        let request = Self.memoryLine("kf_req", 1_004_000, ["run": 4, "n": 1, "repeat": false])
+        XCTAssertEqual(Self.memoryFindings(run: 4, through: 20, with: [request]), [])
+    }
+
+    /// The step check over run 5 built in memory, each output 10 ms after its frame: frames
+    /// 12 and 24 are the first 600 and 1200 ms past the key `out` line. Each step's `rate`
+    /// line before its frame's `in` line passes, as does the first step's line alone in a
+    /// run that ends before the second step; the first step's line after frame 12's `in`
+    /// line, or `rate` lines out of the steps' order, are reported.
+    func testAnInputThatReachesAStepNeedsItsRateLineBeforeIt() {
+        let rate = { (kbps: Int, time: Int) in
+            Self.memoryLine("rate", time, ["run": 5, "kbps": kbps])
+        }
+        let steps = [rate(200, 604_000), rate(400, 1_204_000)]
+        XCTAssertEqual(Self.memoryFindings(run: 5, through: 35, with: steps), [])
+        XCTAssertEqual(Self.memoryFindings(run: 5, through: 23, with: [steps[0]]), [])
+        XCTAssertEqual(
+            Self.memoryFindings(run: 5, through: 35, with: [rate(200, 654_000), steps[1]]),
+            ["no rate 200 before the in line at t_us 605000, 600000 us past the first key out"])
+        XCTAssertEqual(
+            Self.memoryFindings(
+                run: 5, through: 35, with: [rate(400, 604_000), rate(200, 1_204_000)]),
+            ["the rate lines [400, 200] are not a prefix of [200, 400]"])
     }
 
     /// One line as a dictionary, after checking its keys against its kind, in order.
@@ -172,11 +209,10 @@ final class ZakadiSDKIntegrationTests: XCTestCase {
         }
         if schedule.runs[run].mode == .step {
             XCTAssertEqual(requests, 0)
-            XCTAssertEqual(rates, [200, 400])
         } else {
-            XCTAssertGreaterThan(requests, 0, "run \(run)")
             XCTAssertEqual(rates, [])
         }
+        XCTAssertEqual(Self.scheduleFindings(lines, run: run, schedule: schedule), [], "run \(run)")
     }
 
     /// The `run_end` summaries equal what the run's lines give (Z-059's computation), to the
@@ -215,5 +251,87 @@ final class ZakadiSDKIntegrationTests: XCTestCase {
                 XCTAssertEqual(logged, value, accuracy: 0.001, "run \(run) \(key)")
             }
         }
+    }
+}
+
+/// The check of a run's keyframe requests and bitrate steps by the log's own times, and
+/// the lines it reads, built in memory.
+extension ZakadiSDKIntegrationTests {
+    /// What a run's lines, in the order they were written, break of the run's keyframe
+    /// requests and bitrate steps (Z-064's Spec, D120). `RunController` counts from the
+    /// run's first IDR only once its output reaches the pipeline's queue, so only the `in`
+    /// lines after the first key `out` line oblige anything, by their `pts_us` past that
+    /// line's: one the keyframe delay or more past it comes after a `kf_req` line, and one
+    /// that reaches a step's time comes after that step's `rate` line, the `rate` lines
+    /// being a prefix of the steps. The first `in` line to reach a time stands for every
+    /// later one.
+    static func scheduleFindings(
+        _ lines: [[String: Any]], run: Int, schedule: ProbeSchedule
+    ) -> [String] {
+        let entry = schedule.runs[run]
+        let kinds = lines.map { $0["kind"] as? String }
+        let rates = kinds.indices.filter { kinds[$0] == "rate" }
+        let kbps = rates.compactMap { lines[$0]["kbps"] as? Int }
+        let steps = entry.rateSteps.map(\.kbps)
+        var findings: [String] = []
+        if !steps.starts(with: kbps) {
+            findings.append("the rate lines \(kbps) are not a prefix of \(steps)")
+        }
+        guard
+            let key = kinds.indices.first(where: {
+                kinds[$0] == "out" && lines[$0]["key"] as? Bool == true
+            }),
+            let origin = lines[key]["pts_us"] as? Int
+        else { return findings }
+        let inputs: [(index: Int, past: Int)] = kinds.indices.compactMap { index in
+            guard index > key, kinds[index] == "in", let pts = lines[index]["pts_us"] as? Int
+            else { return nil }
+            return (index, pts - origin)
+        }
+        /// A finding unless the first `in` line `milliseconds` or more past the key `out`
+        /// line, if there is one, comes after the line at `needed`.
+        func check(_ milliseconds: Int, needs needed: Int?, _ missing: String) {
+            guard let input = inputs.first(where: { $0.past >= milliseconds * 1_000 }) else {
+                return
+            }
+            if let needed, needed < input.index { return }
+            let time = lines[input.index]["t_us"] as? Int ?? 0
+            let place = "the in line at t_us \(time), \(input.past) us past the first key out"
+            findings.append("no \(missing) before \(place)")
+        }
+        if entry.keyframeRequests {
+            check(schedule.keyframeDelayMs, needs: kinds.firstIndex(of: "kf_req"), "kf_req")
+        }
+        for (number, step) in entry.rateSteps.enumerated() {
+            let stepLine = number < rates.count ? rates[number] : nil
+            check(step.atMs, needs: stepLine, "rate \(step.kbps)")
+        }
+        return findings
+    }
+
+    /// A line as `parse` returns it, with the keys the schedule check reads.
+    static func memoryLine(_ kind: String, _ time: Int, _ fields: [String: Any]) -> [String: Any] {
+        fields.merging(["v": 1, "kind": kind, "t_us": time]) { field, _ in field }
+    }
+
+    /// The schedule check's findings over run `run` of schedule 1 shortened by 10, its lines
+    /// built in memory and put in the order of their `t_us`, as the probe writes them: frames
+    /// 0 to `last`, one every 50 ms, each with its `in` line 5 ms after its time and its `out`
+    /// line, key for frame 0, `lag` after that, among the lines `with`.
+    static func memoryFindings(
+        run: Int, through last: Int, lag: Int = 10_000, with others: [[String: Any]] = []
+    ) -> [String] {
+        let frames = (0...last).flatMap { frame -> [[String: Any]] in
+            let pts = frame * 50_000
+            return [
+                memoryLine("in", pts + 5_000, ["run": run, "pts_us": pts]),
+                memoryLine(
+                    "out", pts + 5_000 + lag, ["run": run, "pts_us": pts, "key": frame == 0]),
+            ]
+        }
+        let lines = (frames + others).sorted {
+            ($0["t_us"] as? Int ?? 0) < ($1["t_us"] as? Int ?? 0)
+        }
+        return scheduleFindings(lines, run: run, schedule: ProbeSchedule.one.shortened(by: 10))
     }
 }
